@@ -1,0 +1,74 @@
+import os
+import logging
+import datetime
+import pytz
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+EASTERN_TZ = pytz.timezone("US/Eastern")
+
+async def send_morning_shift(context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.send_message(
+        chat_id=context.job.data,
+        text="☀️ Good morning DAY shift is here"
+    )
+
+async def send_afterhours_shift(context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.send_message(
+        chat_id=context.job.data,
+        text="🌤️ Good evening AFTERHOURS shift is here"
+    )
+
+async def send_night_shift(context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.send_message(
+        chat_id=context.job.data,
+        text="🌙 Good day NIGHT shift is here"
+    )
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    job_queue = context.job_queue
+
+    current_jobs = job_queue.get_jobs_by_name(str(chat_id))
+    for job in current_jobs:
+        job.schedule_removal()
+
+    # 8:00 AM Eastern Time
+    job_queue.run_daily(
+        send_morning_shift,
+        time=datetime.time(hour=8, minute=0, second=0, tzinfo=EASTERN_TZ),
+        data=chat_id,
+        name=str(chat_id)
+    )
+
+    # 12:00 PM Eastern Time
+    job_queue.run_daily(
+        send_afterhours_shift,
+        time=datetime.time(hour=12, minute=0, second=0, tzinfo=EASTERN_TZ),
+        data=chat_id,
+        name=str(chat_id)
+    )
+
+    # 10:00 PM Eastern Time
+    job_queue.run_daily(
+        send_night_shift,
+        time=datetime.time(hour=22, minute=0, second=0, tzinfo=EASTERN_TZ),
+        data=chat_id,
+        name=str(chat_id)
+    )
+
+    await update.message.reply_text("✅ Driver shift reminders are active for this chat!")
+
+if __name__ == '__main__':
+    if not BOT_TOKEN:
+        raise ValueError("BOT_TOKEN environment variable is missing!")
+        
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.run_polling()

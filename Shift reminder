@@ -1,0 +1,67 @@
+import os
+import logging
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+
+# Logging setup to track activity in hosting logs
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+
+# Fetch token securely from environment variables
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+
+# Helper command to confirm bot is working
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "👋 Shift Reminder Bot is online!\n\n"
+        "Use `/remind <DriverName> <seconds>` to schedule a test reminder.\n"
+        "Example: `/remind Alex 60` (reminds Alex in 60 seconds)"
+    )
+
+# Async job function triggered when the scheduled timer fires
+async def send_shift_reminder(context: ContextTypes.DEFAULT_TYPE):
+    job_data = context.job.data
+    chat_id = job_data['chat_id']
+    driver_name = job_data['driver_name']
+    
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"🚨 *SHIFT REMINDER*: Driver **{driver_name}**, your shift starts soon!",
+        parse_mode="Markdown"
+    )
+
+# Command to set a reminder
+async def set_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        driver_name = context.args[0]
+        delay_seconds = int(context.args[1])
+        chat_id = update.effective_chat.id
+
+        # Schedule the job in queue
+        context.job_queue.run_once(
+            send_shift_reminder,
+            when=delay_seconds,
+            data={'chat_id': chat_id, 'driver_name': driver_name}
+        )
+        
+        await update.message.reply_text(
+            f"✅ Reminder scheduled! Will remind **{driver_name}** in {delay_seconds} seconds.",
+            parse_mode="Markdown"
+        )
+    except (IndexError, ValueError):
+        await update.message.reply_text("⚠️ Invalid format!\nUse: `/remind <DriverName> <seconds>`")
+
+if __name__ == '__main__':
+    if not BOT_TOKEN:
+        raise ValueError("BOT_TOKEN environment variable not set!")
+        
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    
+    # Handlers
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("remind", set_reminder))
+    
+    print("Bot starting up...")
+    app.run_polling()
